@@ -1,5 +1,6 @@
 #!/usr/bin/python3
 
+import os
 import time
 from Markovtext import Markover
 import wave
@@ -8,9 +9,9 @@ import pyaudio
 import json
 import threading
 import collections
-from gpiozero import Button
+from gpiozero import LED, Button
 
-BLOCKSIZE = 1024
+BLOCKSIZE = 128
 
 def hook(pairs):
     ### Hook to read JSON into defaultdict(list)###
@@ -20,50 +21,77 @@ def hook(pairs):
         d[k] = v  
     return d
 
-def create_wave(sentence): 
-    subprocess.run(['pico2wave', '--wave=test.wav', sentence])
 
-def open_wave():
-    return wave.open("test.wav", "rb")
+def avg(x):
+    if len(x) > 0:
+        return sum(x)/len(x)
+    else:
+        return 0
+
+def read_from_usb(m):
+    os.unlink('dict.json')
+    with open('dict.json', 'w') as jsonfile:
+        m.generate_from_txt('/media/usbsticka/input.txt')
+        json.dump(m.get_wordtable(), jsonfile)
+
+    print("finished read from usb")
+    
+def read_std(m):
+    os.unlink('dict.json')
+    with open('dict.json', 'w') as jsonfile:
+        m.generate_from_txt('std.txt')
+        json.dump(m.get_wordtable(), jsonfile)
+
+
+    print("finished read from std")
 
 def main():
+   
+    led = LED(17)
+    usb_button = Button(14)
+    std_button = Button(18)
     
     p = pyaudio.PyAudio()
     mrkv = Markover()
-
+    std_button.when_pressed = lambda : read_std(mrkv)
+    usb_button.when_pressed = lambda : read_from_usb(mrkv)
+    
     try:
         with open('dict.json', 'r') as jsonfile:
             data = json.load(jsonfile, object_pairs_hook=hook)
     except IOError:
         with open('dict.json', 'w') as jsonfile:
-            mrkv.generate_from_txt('/media/usbsticka/recept.txt')
+            mrkv.generate_from_txt('std.txt')
             json.dump(mrkv.get_wordtable(), jsonfile)
     else:
         mrkv.set_wordtable(data)
-   
-    sentence = mrkv.get_next_sentence()
-    print(sentence)
-    
-    create_wave(sentence)
-    
-    wf = open_wave()
+  
+    while True: 
+        sentence = mrkv.get_next_sentence()
+        print(sentence)
+        subprocess.run(['pico2wave', '--wave=voice.wav', sentence])
 
-    def dspcallback(in_data, frame_count, time_info, flag):
-        data = wf.readframes(frame_count)
-        return data, pyaudio.paContinue 
+        wf = wave.open("voice.wav", "rb")
 
-    stream = p.open(format=p.get_format_from_width(wf.getsampwidth()),
-                    channels=1,
-                    rate=13000,
-                    output=True,
-                    frames_per_buffer=BLOCKSIZE,
-                    stream_callback = dspcallback)
+        def dspcallback(in_data, frame_count, time_info, flag):
+            led.off()
+            data = wf.readframes(frame_count)
+            if avg(data) > 130:
+                led.on()
+            return data, pyaudio.paContinue 
 
-     
-    stream.start_stream() 
+        stream = p.open(format=p.get_format_from_width(wf.getsampwidth()),
+                        channels=1,
+                        rate=13000,
+                        output=True,
+                        frames_per_buffer=BLOCKSIZE,
+                        stream_callback = dspcallback)
+        stream.start_stream() 
 
-    while stream.is_active():
-        time.sleep(0.1)
+        while stream.is_active():
+            time.sleep(0.1)
+        stream.close()
+
 
     # Close everything
     stream.close()

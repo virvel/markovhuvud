@@ -10,11 +10,11 @@ class Markover:
     wordTable = defaultdict(list)
 
     
-    def read_file(self):
-        file = open(self.filepath,'r')
-        self.text = file.read()
+    def generate_from_txt(self, filepath):
+        self.wordTable = defaultdict(list)
+        f = open(filepath,'r')
+        self.text = f.read()
 
-#        self.text = self.text.replace(",", "")
         self.text = self.text.replace("\n", " ")
         self.text = self.text.replace('\"', "")
 
@@ -24,6 +24,7 @@ class Markover:
                 self.wordTable[sentence[i]].append(sentence[i+1])
         for k,v in self.wordTable.items():
             self.wordTable[k] = list(set(v))
+        f.close()
 
     def get_next_sentence(self):
         randWord = sample(list(self.wordTable), 1)
@@ -36,13 +37,7 @@ class Markover:
             newSentence = newSentence + " " + nextWord
             currentWord = nextWord
 
-        return newSentence[1:].capitalize() + "."
-
-    
-    def generate_from_txt(self,filepath):
-        self.filepath = filepath
-        self.read_file()
-    
+        return newSentence[1:].capitalize() + "." 
 
     def set_wordtable(self, dic):
         self.wordTable = dic
